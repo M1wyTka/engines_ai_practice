@@ -6,6 +6,11 @@
 #include "math.h"
 #include "dungeonGen.h"
 #include "dungeonUtils.h"
+#include <iostream>
+#include <queue>
+#include <unordered_set>
+#include <algorithm>
+#include <utility>
 
 template<typename T>
 static size_t coord_to_idx(T x, T y, size_t w)
@@ -37,98 +42,217 @@ static std::vector<Position> reconstruct_path(std::vector<Position> prev, Positi
   while (prev[coord_to_idx(curPos.x, curPos.y, width)] != Position{-1, -1})
   {
     curPos = prev[coord_to_idx(curPos.x, curPos.y, width)];
-    res.insert(res.begin(), curPos);
+    res.push_back(curPos);
   }
   return res;
 }
 
-static std::vector<Position> find_path_a_star(const char *input, size_t width, size_t height, Position from, Position to)
+
+namespace std
 {
-  if (from.x < 0 || from.y < 0 || from.x >= int(width) || from.y >= int(height))
-    return std::vector<Position>();
-  size_t inpSize = width * height;
-
-  std::vector<float> g(inpSize, std::numeric_limits<float>::max());
-  std::vector<float> f(inpSize, std::numeric_limits<float>::max());
-  std::vector<Position> prev(inpSize, {-1,-1});
-
-  auto getG = [&](Position p) -> float { return g[coord_to_idx(p.x, p.y, width)]; };
-  auto getF = [&](Position p) -> float { return f[coord_to_idx(p.x, p.y, width)]; };
-
-  auto heuristic = [](Position lhs, Position rhs) -> float
-  {
-    return sqrtf(square(float(lhs.x - rhs.x)) + square(float(lhs.y - rhs.y)));
-  };
-
-  g[coord_to_idx(from.x, from.y, width)] = 0;
-  f[coord_to_idx(from.x, from.y, width)] = heuristic(from, to);
-
-  std::vector<Position> openList = {from};
-  std::vector<Position> closedList;
-
-  while (!openList.empty())
-  {
-    size_t bestIdx = 0;
-    float bestScore = getF(openList[0]);
-    for (size_t i = 1; i < openList.size(); ++i)
+    template<> struct hash<Position>
     {
-      float score = getF(openList[i]);
-      if (score < bestScore)
-      {
-        bestIdx = i;
-        bestScore = score;
-      }
-    }
-    if (openList[bestIdx] == to)
-      return reconstruct_path(prev, to, width);
-    Position curPos = openList[bestIdx];
-    openList.erase(openList.begin() + bestIdx);
-    if (std::find(closedList.begin(), closedList.end(), curPos) != closedList.end())
-      continue;
-    size_t idx = coord_to_idx(curPos.x, curPos.y, width);
-    DrawPixel(curPos.x, curPos.y, Color{uint8_t(g[idx]), uint8_t(g[idx]), 0, 100});
-    closedList.emplace_back(curPos);
-    auto checkNeighbour = [&](Position p)
-    {
-      // out of bounds
-      if (p.x < 0 || p.y < 0 || p.x >= int(width) || p.y >= int(height))
-        return;
-      size_t idx = coord_to_idx(p.x, p.y, width);
-      // not empty
-      if (input[idx] == '#')
-        return;
-      float weight = input[idx] == 'o' ? 10.f : 1.f;
-      float gScore = getG(curPos) + 1.f * weight; // we're exactly 1 unit away
-      if (gScore < getG(p))
-      {
-        prev[idx] = curPos;
-        g[idx] = gScore;
-        f[idx] = gScore + heuristic(p, to);
-      }
-      bool found = std::find(openList.begin(), openList.end(), p) != openList.end();
-      if (!found)
-        openList.emplace_back(p);
+        using argument_type = Position;
+        using result_type = std::size_t;
+        result_type operator()(argument_type const& a) const
+        {
+            result_type const h1(std::hash<int>()(a.x));
+            result_type const h2(std::hash<int>()(a.y));
+            return h1 ^ (h2 << 1);
+        }
     };
-    checkNeighbour({curPos.x + 1, curPos.y + 0});
-    checkNeighbour({curPos.x - 1, curPos.y + 0});
-    checkNeighbour({curPos.x + 0, curPos.y + 1});
-    checkNeighbour({curPos.x + 0, curPos.y - 1});
-  }
-  // empty path
-  return std::vector<Position>();
 }
+
+struct PositionPriority
+{
+    Position pos;
+    float priority;
+};
+
+class PrioritySet 
+{
+public:
+    PrioritySet() {};
+
+    template<class T, class...Ts>
+    PrioritySet(T a, Ts... meh)
+    {
+        (push(a), ..., push(meh));
+    }
+
+    void push(Position pos) {
+        openList.push({pos, 0});
+        stillOpen.insert(pos);
+    }
+
+    void push(PositionPriority pair) {
+        openList.push(pair);
+        stillOpen.insert(pair.pos);
+    }
+
+    PositionPriority pop()
+    {
+        auto cur = openList.top();
+        openList.pop();
+        stillOpen.erase(stillOpen.find(cur.pos));
+        return cur;
+    }
+
+    bool empty() { return openList.empty(); }
+
+    bool contains(Position pos) 
+    {
+        return stillOpen.contains(pos);
+    }
+
+private:
+    constexpr static auto cmp = [](PositionPriority left, PositionPriority right) { return (left.priority) > (right.priority); };
+    std::priority_queue<PositionPriority, std::vector<PositionPriority>, decltype(cmp)> openList{ cmp };
+    std::unordered_set<Position> stillOpen {};
+};
+
+static std::vector<Position> find_ara_star(const char* input, size_t width, size_t height, Position from, Position to)
+{
+    if (from.x < 0 || from.y < 0 || from.x >= int(width) || from.y >= int(height))
+        return std::vector<Position>();
+    size_t inpSize = width * height;
+    
+    return {};
+}
+
+class AStarPathfinder
+{
+public:
+    AStarPathfinder(size_t width, size_t height) :
+        width(width)
+        , height(height)
+        , input_size(width* height)
+        , g(input_size, std::numeric_limits<float>::max())
+        , f(input_size, std::numeric_limits<float>::max())
+        , prev(input_size, { -1,-1 })
+    {}
+
+    std::vector<Position> find_path_a_star(const char* input, Position from, Position to)
+    {
+        if (from.x < 0 || from.y < 0 || from.x >= int(width) || from.y >= int(height))
+            return std::vector<Position>();
+
+        if (prev_from == from && prev_to == to)
+        {
+            display_weights();
+            return reconstruct_path(prev, to, width);
+        }
+        prev_from = from;
+        prev_to = to;
+        clear();
+
+        return pathfind(input, from, to);
+    }
+
+private:
+    std::vector<Position> pathfind(const char* input, const Position& from, const Position& to)
+    {
+        size_t id = coord_to_idx(from.x, from.y, width);
+        g[id] = 0;
+        f[id] = heuristic(from, to);
+
+        PrioritySet meh{ from };
+        std::unordered_set<Position> closedList;
+
+        while (!meh.empty())
+        {
+            Position curPos = meh.pop().pos;
+            if (curPos == to)
+            {
+                display_weights();
+                return reconstruct_path(prev, to, width);
+            }
+            if (closedList.contains(curPos))
+                continue;
+
+            display.push_back(curPos);
+
+            closedList.insert(curPos);
+            auto checkNeighbour = [&](Position p)
+            {
+                // out of bounds
+                if (p.x < 0 || p.y < 0 || p.x >= int(width) || p.y >= int(height))
+                    return;
+                size_t idx = coord_to_idx(p.x, p.y, width);
+                // not empty
+                if (input[idx] == '#')
+                    return;
+
+                float weight = input[idx] == 'o' ? 10.f : 1.f;
+                float gScore = getG(curPos) + 1.f * weight; // we're exactly 1 unit away
+                if (gScore < getG(p))
+                {
+                    prev[idx] = curPos;
+                    g[idx] = gScore;
+                    f[idx] = gScore + heuristic(p, to);
+                }
+
+                if (!meh.contains(p))
+                {
+                    meh.push({ p, f[idx] });
+                }
+            };
+            checkNeighbour({ curPos.x + 1, curPos.y + 0 });
+            checkNeighbour({ curPos.x - 1, curPos.y + 0 });
+            checkNeighbour({ curPos.x + 0, curPos.y + 1 });
+            checkNeighbour({ curPos.x + 0, curPos.y - 1 });
+        }
+        return std::vector<Position>();
+    }
+
+    void display_weights() 
+    {
+        for (const auto& pos : display)
+        {
+            size_t idx = coord_to_idx(pos.x, pos.y, width);
+            DrawPixel(pos.x, pos.y, Color{ uint8_t(g[idx]), uint8_t(g[idx]), 0, 100 });
+        }
+    }
+
+    void clear() 
+    {
+        std::fill(prev.begin(), prev.end(), Position{ -1,-1 });
+        std::fill(g.begin(), g.end(), std::numeric_limits<float>::max());
+        std::fill(f.begin(), f.end(), std::numeric_limits<float>::max());
+        display.clear();
+    }
+
+    float getG(const Position& p) { return g[coord_to_idx(p.x, p.y, width)]; }
+    float getF(const Position& p) { return f[coord_to_idx(p.x, p.y, width)]; }
+    float heuristic(const Position& lhs, const Position& rhs) {
+        return sqrtf(square(float(lhs.x - rhs.x)) + square(float(lhs.y - rhs.y)));
+    }
+
+private:
+    size_t width{};
+    size_t height{};
+    size_t input_size{};
+
+    std::vector<float> g;
+    std::vector<float> f;
+    std::vector<Position> prev;
+    Position prev_from = { -1, -1 };
+    Position prev_to = { -1, -1 };
+    std::vector<Position> display{};
+};
 
 void draw_nav_data(const char *input, size_t width, size_t height, Position from, Position to)
 {
   draw_nav_grid(input, width, height);
-  std::vector<Position> path = find_path_a_star(input, width, height, from, to);
+  static AStarPathfinder finder(width, height);
+  std::vector<Position> path = finder.find_path_a_star(input, from, to);
   draw_path(path);
 }
 
 int main(int /*argc*/, const char ** /*argv*/)
 {
-  int width = 1920;
-  int height = 1080;
+  int width = 1480;
+  int height = 720;
   InitWindow(width, height, "w3 AI MIPT");
 
   const int scrWidth = GetMonitorWidth(0);
@@ -140,7 +264,7 @@ int main(int /*argc*/, const char ** /*argv*/)
     SetWindowSize(width, height);
   }
 
-  constexpr size_t dungWidth = 100;
+  constexpr size_t dungWidth = 200;
   constexpr size_t dungHeight = 100;
   char *navGrid = new char[dungWidth * dungHeight];
   gen_drunk_dungeon(navGrid, dungWidth, dungHeight, 24, 100);
